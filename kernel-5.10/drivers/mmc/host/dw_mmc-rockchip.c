@@ -191,6 +191,7 @@ static int dw_mci_rk3288_execute_tuning(struct dw_mci_slot *slot, u32 opcode)
 	struct mmc_host *mmc = slot->mmc;
 	int ret = 0;
 	int i;
+	int j;
 	bool v, prev_v = 0, first_v;
 	struct range_t {
 		int start;
@@ -218,50 +219,62 @@ static int dw_mci_rk3288_execute_tuning(struct dw_mci_slot *slot, u32 opcode)
 	if (!ranges)
 		return -ENOMEM;
 
-	/* Try each phase and extract good ranges */
-	for (i = 0; i < priv->num_phases; ) {
-		/* Cannot guarantee any phases larger than 270 would work well */
-		if (TUNING_ITERATION_TO_PHASE(i, priv->num_phases) > 270)
-			break;
-		clk_set_phase(priv->sample_clk,
-			      TUNING_ITERATION_TO_PHASE(i, priv->num_phases));
+	for (j = 0; j < 20; j++ ) {
+		/* Some devices will not initialize phase ranges successfully on first try, let's try 20 times. */
+		range_count = 0;
+		prev_v = false;
+		i = 0;
 
-		v = !mmc_send_tuning(mmc, opcode, NULL);
+        	/* Try each phase and extract good ranges */
+        	for (i = 0; i < priv->num_phases; ) {
+                	/* Cannot guarantee any phases larger than 270 would work well */
+                	if (TUNING_ITERATION_TO_PHASE(i, priv->num_phases) > 270)
+                        	break;
+                	clk_set_phase(priv->sample_clk,
+                              	TUNING_ITERATION_TO_PHASE(i, priv->num_phases));
 
-		if (i == 0)
-			first_v = v;
+                	v = !mmc_send_tuning(mmc, opcode, NULL);
 
-		if ((!prev_v) && v) {
-			range_count++;
-			ranges[range_count-1].start = i;
-		}
-		if (v) {
-			ranges[range_count-1].end = i;
-			i++;
-		} else if (i == priv->num_phases - 1) {
-			/* No extra skipping rules if we're at the end */
-			i++;
-		} else {
-			/*
-			 * No need to check too close to an invalid
-			 * one since testing bad phases is slow.  Skip
-			 * 20 degrees.
-			 */
-			i += DIV_ROUND_UP(20 * priv->num_phases, 360);
+                	if (i == 0)
+                        	first_v = v;
 
-			/* Always test the last one */
-			if (i >= priv->num_phases)
-				i = priv->num_phases - 1;
-		}
+                	if ((!prev_v) && v) {
+                        	range_count++;
+                        	ranges[range_count-1].start = i;
+                	}
+                	if (v) {
+                        	ranges[range_count-1].end = i;
+                        	i++;
+                	} else if (i == priv->num_phases - 1) {
+                        	/* No extra skipping rules if we're at the end */
+                        	i++;
+                	} else {
+                        	/*
+                         	* No need to check too close to an invalid
+                         	* one since testing bad phases is slow.  Skip
+                         	* 20 degrees.
+                         	*/
+                        	i += DIV_ROUND_UP(20 * priv->num_phases, 360);
 
-		prev_v = v;
+                        	/* Always test the last one */
+                        	if (i >= priv->num_phases)
+                                	i = priv->num_phases - 1;
+                	}
+
+                	prev_v = v;
+        	}
+
+        	if (range_count == 0) {
+                	dev_warn(host->dev, "All phases bad!");
+        	}
+
 	}
 
-	if (range_count == 0) {
-		dev_warn(host->dev, "All phases bad!");
-		ret = -EIO;
-		goto free;
-	}
+        if (range_count == 0) {
+                dev_warn(host->dev, "All phases bad!");
+                ret = -EIO;
+                goto free;
+        }
 
 	/* wrap around case, merge the end points */
 	if ((range_count > 1) && first_v && v) {
