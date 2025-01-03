@@ -397,4 +397,9 @@ config JOYSTICK_ODROID_GOU
 	tristate "ODROID-Go-Ultra joypad driver"
 	help
 	  Made for ODROID-GO-Ultra.
+	  
+config JOYSTICK_ROCKNIX_SINGLEADC
+	tristate "ROCKNIX_SINGLEADC joypad driver"
+	help
+	  Made for Rocknix devices.
 endif

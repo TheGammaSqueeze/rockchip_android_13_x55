@@ -39,3 +39,4 @@ obj-$(CONFIG_JOYSTICK_WALKERA0701)	+= walkera0701.o
 obj-$(CONFIG_JOYSTICK_XPAD)		+= xpad.o
 obj-$(CONFIG_JOYSTICK_ZHENHUA)		+= zhenhua.o
 obj-$(CONFIG_JOYSTICK_ODROID_GOU)	+= odroid-gou-joypad.o
+obj-$(CONFIG_JOYSTICK_ROCKNIX_SINGLEADC)	+= rocknix-singleadc-joypad.o
