@@ -117,8 +117,6 @@ struct joypad {
 	u16 has_rumble;
 };
 
-extern struct input_dev * joypad_input_g;
-
 /*----------------------------------------------------------------------------*/
 static bool has_rumble(struct device *dev)
 {
@@ -1134,8 +1132,6 @@ static int joypad_input_setup(struct device *dev, struct joypad *joypad)
 
 	input->name = DRV_NAME;
 
-	joypad_input_g=input;
-
 	device_property_read_string(dev, "joypad-name", &input->name);
 	input->phys = DRV_NAME"/input0";
 
@@ -1354,12 +1350,14 @@ static int joypad_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static void joypad_remove(struct platform_device *pdev)
+static int joypad_remove(struct platform_device *pdev)
 {
 	struct joypad *joypad = platform_get_drvdata(pdev);
 	sysfs_remove_group(&pdev->dev.kobj, &joypad_attr_group);
 	if (joypad->has_rumble)
 		sysfs_remove_group(&pdev->dev.kobj, &joypad_rumble_attr_group);
+
+	return 0;
 }
 /*----------------------------------------------------------------------------*/
 static const struct of_device_id joypad_of_match[] = {
@@ -1372,7 +1370,7 @@ MODULE_DEVICE_TABLE(of, joypad_of_match);
 /*----------------------------------------------------------------------------*/
 static struct platform_driver joypad_driver = {
 	.probe = joypad_probe,
-	.remove_new = joypad_remove,
+	.remove = joypad_remove,
 	.driver = {
 		.name = DRV_NAME,
 		.pm = &joypad_pm_ops,
