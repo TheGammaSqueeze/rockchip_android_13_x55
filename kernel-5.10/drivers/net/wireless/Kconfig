@@ -125,4 +125,10 @@ config VIRT_WIFI
 	  This option adds support for ethernet connections to appear as if they
 	  are wifi connections through a special rtnetlink device.
 
+config RTL8733BU
+        tristate "RTL8733BU Wifi Driver"
+        help
+          This option adds support for RTL8733BU
+          wifi connections.
+
 endif # WLAN

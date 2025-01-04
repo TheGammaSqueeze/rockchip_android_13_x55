@@ -15,7 +15,10 @@
 
 #include <drv_types.h>
 #include <rtw_mem.h>
+#include <linux/module.h>
+#include <linux/export.h>
 
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Realtek Wireless Lan Driver");
 MODULE_AUTHOR("Realtek Semiconductor Corp.");
