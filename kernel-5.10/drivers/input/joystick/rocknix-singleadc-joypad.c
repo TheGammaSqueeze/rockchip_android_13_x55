@@ -20,14 +20,13 @@
 #include <linux/pwm.h>
 #include "rocknix-joypad.h"
 
-/* --- BEGIN ADD --- */
 #include <linux/kthread.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 #include <linux/fs.h>
 #include <linux/termios.h>
 #include <linux/uaccess.h>
-/* --- END ADD --- */
+#include <linux/workqueue.h>
 
 /*----------------------------------------------------------------------------*/
 #define DRV_NAME "rocknix-singleadc-joypad"
@@ -170,7 +169,7 @@ struct joypad {
 	u16 boost_strong;
 	u16 has_rumble;
 
-	/* --- BEGIN ADD --- */
+
 	/* New property to override logic with Miyoo serial approach */
 	bool use_miyoo_serial;
 	/*
@@ -182,7 +181,14 @@ struct joypad {
 	struct miyoo_serial_stick miyoo;
 	struct task_struct *miyoo_thread;
 	struct file *miyoo_filp;
-	/* --- END ADD --- */
+
+	/*
+	 * We'll do a delayed work item to do the TTY initialization
+	 * after the driver has finished loading. This ensures we
+	 * don't block the kernel boot.
+	 */
+	struct delayed_work miyoo_init_work;
+
 };
 
 /*----------------------------------------------------------------------------*/
@@ -822,7 +828,6 @@ static void joypad_poll(struct input_polled_dev *poll_dev)
 	struct joypad *joypad = poll_dev->private;
 
 	if (joypad->enable) {
-		/* --- BEGIN ADD --- */
 		if (joypad->use_miyoo_serial) {
 			/*
 			 * Instead of ADC, we rely on the data read in
@@ -837,12 +842,9 @@ static void joypad_poll(struct input_polled_dev *poll_dev)
 
 			joypad_gpio_check(poll_dev);
 		} else {
-		/* --- END ADD --- */
 		joypad_adc_check(poll_dev);
 		joypad_gpio_check(poll_dev);
-		/* --- BEGIN ADD --- */
 		}
-		/* --- END ADD --- */
 	}
 	if (poll_dev->poll_interval != joypad->poll_interval) {
 		mutex_lock(&joypad->lock);
@@ -1507,14 +1509,6 @@ static int __maybe_unused joypad_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(joypad_pm_ops, joypad_suspend, joypad_resume);
 
-/* --- BEGIN ADD ---
- * We'll define the Miyoo logic in-kernel:
- *   - We do a 20s wait
- *   - We open /dev/ttyS1 at 9600 8N1
- *   - We auto-calibrate by reading 50 frames
- *   - Then read forever
- */
-
 static int miyoo_autocal(struct joypad *joypad)
 {
 	long sumYL = 0, sumXL = 0, sumYR = 0, sumXR = 0;
@@ -1570,9 +1564,6 @@ static int miyoo_autocal(struct joypad *joypad)
 
 static void miyoo_parse_frame(struct joypad *joypad, unsigned char *frame)
 {
-	/* frame[0] = 0xFF, frame[1] = axisYL, frame[2] = axisXL,
-	 * frame[3] = axisYR, frame[4] = axisXR, frame[5] = 0xFE
-	 */
 	if (frame[0] != MIYOO_MAGIC_START || frame[5] != MIYOO_MAGIC_END) {
 		return;
 	}
@@ -1635,9 +1626,10 @@ static int miyoo_start_serial(struct joypad *joypad)
 	struct ktermios term;
 	mm_segment_t oldfs;
 
-	/* 20-second wait before init */
-	dev_info(joypad->dev, "Waiting 20s before initializing /dev/ttyS1...\n");
-	msleep(20000);
+	/*
+	 * The delayed work will call this function ~10s later.
+	 */
+	dev_info(joypad->dev, "Starting /dev/ttyS1 init after driver load.\n");
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -1692,9 +1684,25 @@ static int miyoo_start_serial(struct joypad *joypad)
 		return PTR_ERR(joypad->miyoo_thread);
 	}
 
+	dev_info(joypad->dev, "Miyoo serial logic started successfully!\n");
 	return 0;
 }
-/* --- END ADD --- */
+
+/*
+ * We'll define a delayed work function that calls miyoo_start_serial()
+ * after 10 seconds. This ensures the driver loads fully first.
+ */
+static void miyoo_delayed_init_workfn(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct joypad *joypad = container_of(dwork, struct joypad, miyoo_init_work);
+
+	/*
+	 * Attempt the TTY initialization. If it fails, we won't
+	 * retry here, could add another delayed schedule if desired.
+	 */
+	miyoo_start_serial(joypad);
+}
 
 /*----------------------------------------------------------------------------*/
 static int joypad_probe(struct platform_device *pdev)
@@ -1749,16 +1757,14 @@ static int joypad_probe(struct platform_device *pdev)
 		}
 	}
 
-	/* --- BEGIN ADD --- */
 	if (joypad->use_miyoo_serial) {
-		/* Start the TTY logic in a kernel thread */
-		error = miyoo_start_serial(joypad);
-		if (error) {
-			dev_err(dev, "Failed to start Miyoo Serial logic: %d\n", error);
-			/* Not returning here, but the serial logic won't function properly */
-		}
+		/*
+		 * Instead of blocking in probe or using a separate boot
+		 * thread, we schedule a delayed work for 10 seconds.
+		 */
+		INIT_DELAYED_WORK(&joypad->miyoo_init_work, miyoo_delayed_init_workfn);
+		schedule_delayed_work(&joypad->miyoo_init_work, 10 * HZ);
 	}
-	/* --- END ADD --- */
 
 	dev_info(dev, "%s : probe success\n", __func__);
 	return 0;
@@ -1772,8 +1778,9 @@ static int joypad_remove(struct platform_device *pdev)
 	if (joypad->has_rumble)
 		sysfs_remove_group(&pdev->dev.kobj, &joypad_rumble_attr_group);
 
-	/* --- BEGIN ADD --- */
 	if (joypad->use_miyoo_serial) {
+		/* Cancel any delayed work if it's not run yet */
+		cancel_delayed_work_sync(&joypad->miyoo_init_work);
 		if (joypad->miyoo_thread) {
 			kthread_stop(joypad->miyoo_thread);
 			joypad->miyoo_thread = NULL;
@@ -1784,7 +1791,6 @@ static int joypad_remove(struct platform_device *pdev)
 		}
 		dev_info(joypad->dev, "Miyoo serial logic stopped.\n");
 	}
-	/* --- END ADD --- */
 
 	return 0;
 }
