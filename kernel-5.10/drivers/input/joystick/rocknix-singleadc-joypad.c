@@ -83,7 +83,7 @@ struct bt_gpio {
 	bool active_level;
 };
 
-/* Replicate the calibration and constants from the userland code.
+/* Replicate the calibration and constants from the userland code. */
 #define MIYOO_FRAME_SIZE        6
 #define MIYOO_MAGIC_START       0xFF
 #define MIYOO_MAGIC_END         0xFE
