@@ -3,6 +3,11 @@ menu "Android"
 
 if ANDROID
 
+config RK_TIMED_GPIO
+        bool "GPIO time vibrator support"
+        help
+          This supports rk-vibrator-gpio.
+
 config ASHMEM
 	bool "Enable the Anonymous Shared Memory Subsystem"
 	depends on SHMEM

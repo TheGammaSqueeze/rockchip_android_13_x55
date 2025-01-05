@@ -22,6 +22,15 @@ config LT7911D_FB_NOTIFIER
 	   Enable this configuration option to enable the FB notifier driver
 	   for Lontium LT7911D.
 
+config TIMED_OUTPUT
+	bool "Timed output class driver"
+	default y
+
+config TIMED_GPIO
+	bool "Android timed gpio driver"
+	depends on GENERIC_GPIO && TIMED_OUTPUT
+	default y
+
 config SENSORS_LIS3LV02D
 	tristate
 	depends on INPUT
