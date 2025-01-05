@@ -15,10 +15,7 @@
 
 #include <drv_types.h>
 #include <rtw_mem.h>
-#include <linux/module.h>
-#include <linux/export.h>
 
-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Realtek Wireless Lan Driver");
 MODULE_AUTHOR("Realtek Semiconductor Corp.");
@@ -53,8 +50,6 @@ MODULE_VERSION("DRIVERVERSION");
 #include <rtl8814a_hal.h>
 #elif defined(CONFIG_RTL8814B)
 #include <rtl8814b_hal.h>
-#elif defined(CONFIG_RTL8822E)
-#include <rtl8822e_hal.h>
 #endif
 
 #if defined(CONFIG_SDIO_HCI) || defined(CONFIG_GSPI_HCI)

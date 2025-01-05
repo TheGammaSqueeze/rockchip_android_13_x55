@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2021 Realtek Corporation.
+ * Copyright(c) 2007 - 2019 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -163,40 +163,9 @@ static int proc_get_mstat(struct seq_file *m, void *v)
 }
 #endif /* DBG_MEM_ALLOC */
 
-static bool regd_info;
 static int proc_get_country_chplan_map(struct seq_file *m, void *v)
 {
-	dump_country_chplan_map(m, regd_info);
-	return 0;
-}
-
-static ssize_t proc_set_country_chplan_map(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
-{
-	char tmp[32];
-	int regd_info_val;
-
-	if (count < 1)
-		return -EINVAL;
-
-	if (count > sizeof(tmp)) {
-		rtw_warn_on(1);
-		return -EFAULT;
-	}
-
-	if (buffer && !copy_from_user(tmp, buffer, count)) {
-		int num = sscanf(tmp, "%d", &regd_info_val);
-
-		if (num >= 1)
-			regd_info = regd_info_val ? 1 : 0;
-	} else
-		return -EFAULT;
-
-	return count;
-}
-
-static int proc_get_country_list(struct seq_file *m, void *v)
-{
-	dump_country_list(m);
+	dump_country_chplan_map(m);
 	return 0;
 }
 
@@ -205,26 +174,6 @@ static int proc_get_chplan_id_list(struct seq_file *m, void *v)
 	dump_chplan_id_list(m);
 	return 0;
 }
-
-static int proc_get_chplan_country_list(struct seq_file *m, void *v)
-{
-	dump_chplan_country_list(m);
-	return 0;
-}
-
-#if CONFIG_IEEE80211_BAND_6GHZ
-static int proc_get_chplan_6g_id_list(struct seq_file *m, void *v)
-{
-	dump_chplan_6g_id_list(m);
-	return 0;
-}
-
-static int proc_get_chplan_6g_country_list(struct seq_file *m, void *v)
-{
-	dump_chplan_6g_country_list(m);
-	return 0;
-}
-#endif
 
 #ifdef CONFIG_RTW_DEBUG
 static int proc_get_chplan_test(struct seq_file *m, void *v)
@@ -280,14 +229,8 @@ const struct rtw_proc_hdl drv_proc_hdls[] = {
 #ifdef DBG_MEM_ALLOC
 	RTW_PROC_HDL_SSEQ("mstat", proc_get_mstat, NULL),
 #endif /* DBG_MEM_ALLOC */
-	RTW_PROC_HDL_SSEQ("country_chplan_map", proc_get_country_chplan_map, proc_set_country_chplan_map),
-	RTW_PROC_HDL_SSEQ("country_list", proc_get_country_list, NULL),
+	RTW_PROC_HDL_SSEQ("country_chplan_map", proc_get_country_chplan_map, NULL),
 	RTW_PROC_HDL_SSEQ("chplan_id_list", proc_get_chplan_id_list, NULL),
-	RTW_PROC_HDL_SSEQ("chplan_country_list", proc_get_chplan_country_list, NULL),
-#if CONFIG_IEEE80211_BAND_6GHZ
-	RTW_PROC_HDL_SSEQ("chplan_6g_id_list", proc_get_chplan_6g_id_list, NULL),
-	RTW_PROC_HDL_SSEQ("chplan_6g_country_list", proc_get_chplan_6g_country_list, NULL),
-#endif
 #ifdef CONFIG_RTW_DEBUG
 	RTW_PROC_HDL_SSEQ("chplan_test", proc_get_chplan_test, NULL),
 #endif
@@ -1230,14 +1173,12 @@ static ssize_t proc_set_rx_info_msg(struct file *file, const char __user *buffer
 
 	struct net_device *dev = data;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
-	struct recv_priv *precvpriv;
+	struct recv_priv *precvpriv = &(padapter->recvpriv);
 	char tmp[32] = {0};
 	int phy_info_flag = 0;
 
 	if (!padapter)
 		return -EFAULT;
-
-	precvpriv = &(padapter->recvpriv);
 
 	if (count < 1) {
 		RTW_INFO("argument size is less than 1\n");
@@ -1556,7 +1497,7 @@ static int proc_get_chan_plan(struct seq_file *m, void *v)
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 
-	dump_cur_chplan(m, adapter_to_rfctl(adapter));
+	dump_cur_chset(m, adapter_to_rfctl(adapter));
 	return 0;
 }
 
@@ -1565,9 +1506,7 @@ static ssize_t proc_set_chan_plan(struct file *file, const char __user *buffer, 
 	struct net_device *dev = data;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[32];
-	u16 chplan = RTW_CHPLAN_UNSPECIFIED;
-	u16 chplan_6g = RTW_CHPLAN_6G_UNSPECIFIED;
-	u8 env = RTW_ENV_NUM;
+	u8 chan_plan = RTW_CHPLAN_UNSPECIFIED;
 
 	if (!padapter)
 		return -EFAULT;
@@ -1583,14 +1522,142 @@ static ssize_t proc_set_chan_plan(struct file *file, const char __user *buffer, 
 	}
 
 	if (buffer && !copy_from_user(tmp, buffer, count)) {
-		int num = sscanf(tmp, "%hx %hx %hhu", &chplan, &chplan_6g, &env);
-		if (num < 1)
+		int num = sscanf(tmp, "%hhx", &chan_plan);
+		if (num !=  1)
 			return count;
-
-		rtw_chplan_ioctl_input_mapping(&chplan, &chplan_6g);
 	}
 
-	rtw_set_channel_plan(padapter, chplan, chplan_6g, env, RTW_REGD_SET_BY_USER);
+	rtw_set_channel_plan(padapter, chan_plan);
+
+	return count;
+}
+
+static int proc_get_monitor_chan_override(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv	*pregpriv = &padapter->registrypriv;
+
+	RTW_PRINT_SEL(m, "Use 10MHz Bandwidth & Unlock Illegal Frequency from 5080MHz to 6165MHz\n");
+	RTW_PRINT_SEL(m, "Github: libc0607/rtl8733bu-20230626\n");
+	RTW_PRINT_SEL(m, "\n");
+	RTW_PRINT_SEL(m, "Usage: echo \"<chan> <bw>\" > monitor_chan_override\n");
+	RTW_PRINT_SEL(m, "chan:	16~253, freq=channel*5+5000\n");
+	RTW_PRINT_SEL(m, "bw:	10-10MHz, 20-20MHz\n");
+	RTW_PRINT_SEL(m, "\n");
+	RTW_PRINT_SEL(m, "e.g.  To transmit in 6005MHz with 10MHz BW, use \n");
+	RTW_PRINT_SEL(m, "\techo \"201 10\" > monitor_chan_override\n");
+	RTW_PRINT_SEL(m, "\n");
+	RTW_PRINT_SEL(m, "Disclaimer: Some chip may not lock on some frequency. There's no guarantee on performance. \n");
+	RTW_PRINT_SEL(m, "The unlocked frequency may damage your hardware.\n");
+	RTW_PRINT_SEL(m, "You should obey the law, and use it at your own risk.\n");
+
+
+	return 0;
+}
+
+static ssize_t proc_set_monitor_chan_override(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	char tmp[32];
+	u32 chan = 149;
+	u32 bw = 20;
+	u32 offset = 0;
+
+	if (!padapter)
+		return -EFAULT;
+
+	if (count < 2) {
+		RTW_INFO("monitor_chan_override Argument error. \n");
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%u %u", &chan, &bw);
+		if (num < 1)
+			return count;
+	}
+
+	if ((bw != 10) && (bw != 20)) {
+		RTW_INFO("monitor_chan_override Bandwidth error: %u\n", bw);
+		return count;
+	}
+
+	RTW_INFO("Write to monitor_chan_override: chan=%d, bw=%d, offset=%d\n", chan, bw, offset);
+	rtw_set_chbw_cmd(padapter, (u8)chan, (bw==10)? 6: 0, (u8)offset, RTW_CMDF_WAIT_ACK);
+
+	return count;
+}
+
+static int proc_get_edcca_threshold_jaguar3_override(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv	*pregpriv = &padapter->registrypriv;
+
+	RTW_PRINT_SEL(m, "Set EDCCA Threshold Override For Realtek Jaguar3 Series (8723F/8735B/8730A/8822C/8812F/8197G/8822E/8198F/8814B/8814C/8733B)\n");
+	RTW_PRINT_SEL(m, "Github: libc0607\n");
+	RTW_PRINT_SEL(m, "\n");
+	RTW_PRINT_SEL(m, "Usage: echo \"<en> <dBm_l2h>\" > edcca_threshold_jaguar3_override\n");
+	RTW_PRINT_SEL(m, "\ten: 0-disable, 1-enable\n");
+	RTW_PRINT_SEL(m, "\tdBm_l2h: Energy CCA level in dBm, range: [-100, 7]; it's -72dBm (0xB0-248) by default from my adaptor's register.\n");
+	RTW_PRINT_SEL(m, "I don't know the actual range since I don't have the detailed datasheet with register definitions, but in theory it can be tuned in +7dBm ~ -240dBm. A threshold below -100dBm seems make no sense so I manually disabled them.\n");
+	RTW_PRINT_SEL(m, "Note: the H2L value is automatically set with 8dBm (default) lower as hysteresis.\n");
+	RTW_PRINT_SEL(m, "Note 2: It's a bit similar to the 'thresh62' patch in ath9k.\n");
+	RTW_PRINT_SEL(m, "\n");
+	RTW_PRINT_SEL(m, "e.g.  To set the threshold to l2h=-40dBm (then h2l=-48dBm), use \n");
+	RTW_PRINT_SEL(m, "\techo \"1 -40\" > edcca_threshold_jaguar3_override\n");
+	RTW_PRINT_SEL(m, "\n");
+	RTW_PRINT_SEL(m, "Disclaimer: There's no guarantee on performance. \n");
+	RTW_PRINT_SEL(m, "This operation may damage your hardware.\n");
+	RTW_PRINT_SEL(m, "You should obey the law, and use it at your own risk.\n");
+
+	return 0;
+}
+
+static ssize_t proc_set_edcca_threshold_jaguar3_override(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv *pregpriv = &padapter->registrypriv;
+	char tmp[32];
+	s32 edcca_thresh = -72;
+	u8 edcca_thresh_en = 0;
+
+	if (!padapter)
+		return -EFAULT;
+
+	if (count < 2) {
+		RTW_INFO("edcca_threshold_jaguar3_override Argument error. \n");
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%hhu %d", &edcca_thresh_en, &edcca_thresh);
+		if (num < 1)
+			return count;
+	}
+
+	if (edcca_thresh > 7 || edcca_thresh < -100) {
+		RTW_INFO("edcca_threshold_jaguar3_override dBm_l2h out of range: %d\n", edcca_thresh);
+		return count;
+	}
+
+	RTW_INFO("Write to edcca_threshold_jaguar3_override: EDCCA override %s, L2H threshold = %ddBm\n", (edcca_thresh_en==1)? "enabled": "disabled", edcca_thresh);
+
+	pregpriv->edcca_thresh_override_en = edcca_thresh_en;
+	pregpriv->edcca_thresh_l2h_override = (s8)edcca_thresh;
 
 	return count;
 }
@@ -1601,7 +1668,10 @@ static int proc_get_country_code(struct seq_file *m, void *v)
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	struct rf_ctl_t *rfctl = adapter_to_rfctl(adapter);
 
-	dump_cur_country(m, rfctl);
+	if (rfctl->country_ent)
+		dump_country_chplan(m, rfctl->country_ent);
+	else
+		RTW_PRINT_SEL(m, "unspecified\n");
 
 	return 0;
 }
@@ -1612,7 +1682,6 @@ static ssize_t proc_set_country_code(struct file *file, const char __user *buffe
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[32];
 	char alpha2[2];
-	u8 env = RTW_ENV_NUM;
 	int num;
 
 	if (count < 1)
@@ -1626,96 +1695,13 @@ static ssize_t proc_set_country_code(struct file *file, const char __user *buffe
 	if (!buffer || copy_from_user(tmp, buffer, count))
 		goto exit;
 
-	/* TODO: accept environment */
 	num = sscanf(tmp, "%c%c", &alpha2[0], &alpha2[1]);
-	if (num < 2)
+	if (num !=	2)
 		return count;
 
-	rtw_set_country(padapter, alpha2, env, RTW_REGD_SET_BY_USER);
+	rtw_set_country(padapter, alpha2);
 
 exit:
-	return count;
-}
-
-#if CONFIG_IEEE80211_BAND_6GHZ
-static int proc_get_env(struct seq_file *m, void *v)
-{
-	struct net_device *dev = m->private;
-	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
-
-	dump_cur_env(m, adapter_to_rfctl(adapter));
-
-	return 0;
-}
-
-static ssize_t proc_set_env(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
-{
-	struct net_device *dev = data;
-	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
-	char tmp[32];
-	u8 env = RTW_ENV_NUM;
-
-	if (!padapter)
-		return -EFAULT;
-
-	if (count < 1) {
-		RTW_INFO("argument size is less than 1\n");
-		return -EFAULT;
-	}
-
-	if (count > sizeof(tmp)) {
-		rtw_warn_on(1);
-		return -EFAULT;
-	}
-
-	if (buffer && !copy_from_user(tmp, buffer, count)) {
-		int num = sscanf(tmp, "%hhu", &env);
-
-		if (num < 1)
-			return count;
-	}
-
-	rtw_set_env(padapter, env, RTW_REGD_SET_BY_USER);
-
-	return count;
-}
-#endif /* CONFIG_IEEE80211_BAND_6GHZ */
-
-static int proc_get_chplan_confs(struct seq_file *m, void *v)
-{
-	struct net_device *dev = m->private;
-	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
-	struct rf_ctl_t *rfctl = adapter_to_rfctl(adapter);
-
-	dump_cur_chplan_confs(m, rfctl);
-
-	return 0;
-}
-
-static ssize_t proc_set_chplan_confs(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
-{
-	struct net_device *dev = data;
-	_adapter *adapter = rtw_netdev_priv(dev);
-	char *tmp;
-	struct chplan_confs confs;
-
-	if (!buffer || count < 1)
-		return -EFAULT;
-
-	tmp = rtw_vmalloc(count + 1);
-	if (!tmp)
-		return -ENOMEM;
-
-	if (copy_from_user(tmp, buffer, count))
-		goto exit;
-	tmp[count] = '\0';
-
-	if (rtw_parse_chplan_confs_cmd_str(&confs, tmp))
-		rtw_set_chplan_confs_cmd(adapter, RTW_CMDF_WAIT_ACK, &confs);
-
-exit:
-	rtw_vmfree(tmp, count + 1);
-
 	return count;
 }
 
@@ -1735,6 +1721,7 @@ static ssize_t proc_set_cap_spt_op_class_ch(struct file *file, const char __user
 	struct net_device *dev = data;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[32];
+	int num;
 
 	if (count < 1)
 		return -EFAULT;
@@ -1747,7 +1734,7 @@ static ssize_t proc_set_cap_spt_op_class_ch(struct file *file, const char __user
 	if (!buffer || copy_from_user(tmp, buffer, count))
 		goto exit;
 
-	sscanf(tmp, "%d", &cap_spt_op_class_ch_detail);
+	num = sscanf(tmp, "%d", &cap_spt_op_class_ch_detail);
 
 exit:
 	return count;
@@ -1769,6 +1756,7 @@ static ssize_t proc_set_reg_spt_op_class_ch(struct file *file, const char __user
 	struct net_device *dev = data;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[32];
+	int num;
 
 	if (count < 1)
 		return -EFAULT;
@@ -1781,7 +1769,7 @@ static ssize_t proc_set_reg_spt_op_class_ch(struct file *file, const char __user
 	if (!buffer || copy_from_user(tmp, buffer, count))
 		goto exit;
 
-	sscanf(tmp, "%d", &reg_spt_op_class_ch_detail);
+	num = sscanf(tmp, "%d", &reg_spt_op_class_ch_detail);
 
 exit:
 	return count;
@@ -1803,6 +1791,7 @@ static ssize_t proc_set_cur_spt_op_class_ch(struct file *file, const char __user
 	struct net_device *dev = data;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[32];
+	int num;
 
 	if (count < 1)
 		return -EFAULT;
@@ -1815,7 +1804,7 @@ static ssize_t proc_set_cur_spt_op_class_ch(struct file *file, const char __user
 	if (!buffer || copy_from_user(tmp, buffer, count))
 		goto exit;
 
-	sscanf(tmp, "%d", &cur_spt_op_class_ch_detail);
+	num = sscanf(tmp, "%d", &cur_spt_op_class_ch_detail);
 
 exit:
 	return count;
@@ -1835,7 +1824,7 @@ ssize_t proc_set_macaddr_acl(struct file *file, const char __user *buffer, size_
 {
 	struct net_device *dev = data;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
-	char *tmp = NULL;
+	char tmp[17 * NUM_ACL + 32] = {0};
 	u8 period;
 	char cmd[32];
 	u8 mode;
@@ -1858,14 +1847,9 @@ ssize_t proc_set_macaddr_acl(struct file *file, const char __user *buffer, size_
 	if (count < 1)
 		return -EFAULT;
 
-	tmp = (char *) rtw_zmalloc(17 * NUM_ACL + 32);
-	if (!tmp)
-		return -ENOMEM;
-
-	if (count > (17 * NUM_ACL + 32)) {
+	if (count > sizeof(tmp)) {
 		rtw_warn_on(1);
-		count = -EFAULT;
-		goto exit;
+		return -EFAULT;
 	}
 
 	if (buffer && !copy_from_user(tmp, buffer, count)) {
@@ -1959,8 +1943,6 @@ ssize_t proc_set_macaddr_acl(struct file *file, const char __user *buffer, size_
 	}
 
 exit:
-	if (tmp)
-		rtw_mfree(tmp, 17 * NUM_ACL + 32);
 	return count;
 }
 #endif /* CONFIG_RTW_MACADDR_ACL */
@@ -2094,19 +2076,6 @@ exit:
 	return count;
 }
 
-#ifdef CONFIG_80211D
-static int proc_get_country_ie_slave_records(struct seq_file *m, void *v)
-{
-	struct net_device *dev = m->private;
-	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
-	struct rf_ctl_t *rfctl = adapter_to_rfctl(adapter);
-
-	dump_country_ie_slave_records(m, rfctl, 0);
-
-	return 0;
-}
-#endif /* CONFIG_80211D */
-
 #ifdef CONFIG_DFS_MASTER
 static int proc_get_dfs_test_case(struct seq_file *m, void *v)
 {
@@ -2156,9 +2125,11 @@ ssize_t proc_set_update_non_ocp(struct file *file, const char __user *buffer, si
 {
 	struct net_device *dev = data;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	struct rf_ctl_t *rfctl = adapter_to_rfctl(adapter);
 	char tmp[32];
-	u8 band, ch, bw = CHANNEL_WIDTH_20, offset = CHAN_OFFSET_NO_EXT;
+	u8 ch, bw = CHANNEL_WIDTH_20, offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
 	int ms = -1;
+	bool updated = 0;
 
 	if (count < 1)
 		return -EFAULT;
@@ -2170,12 +2141,23 @@ ssize_t proc_set_update_non_ocp(struct file *file, const char __user *buffer, si
 
 	if (buffer && !copy_from_user(tmp, buffer, count)) {
 
-		int num = sscanf(tmp, "%hhu %hhu %hhu %hhu %d", &band, &ch, &bw, &offset, &ms);
+		int num = sscanf(tmp, "%hhu %hhu %hhu %d", &ch, &bw, &offset, &ms);
 
-		if (num < 1 || (bw != CHANNEL_WIDTH_20 && num < 4))
+		if (num < 1 || (bw != CHANNEL_WIDTH_20 && num < 3))
 			goto exit;
 
-		rtw_rfctl_force_update_non_ocp_ms(adapter_to_rfctl(adapter), band, ch, bw, offset, ms);
+		if (bw == CHANNEL_WIDTH_20)
+			updated = rtw_chset_update_non_ocp_ms(rfctl->channel_set
+				, ch, bw, HAL_PRIME_CHNL_OFFSET_DONT_CARE, ms);
+		else
+			updated = rtw_chset_update_non_ocp_ms(rfctl->channel_set
+				, ch, bw, offset, ms);
+
+		if (updated) {
+			u8 cch = rtw_get_center_ch(ch, bw, offset);
+
+			rtw_nlrtw_nop_start_event(adapter, cch, bw);
+		}
 	}
 
 exit:
@@ -2333,11 +2315,8 @@ static ssize_t proc_set_dfs_slave_with_rd(struct file *file, const char __user *
 	rd = rd ? 1 : 0;
 
 	if (rfctl->dfs_slave_with_rd != rd) {
-		int i;
-
 		rfctl->dfs_slave_with_rd = rd;
-		for (i = HW_BAND_0; i < HW_BAND_MAX; i++)
-			rtw_dfs_rd_en_decision_cmd(adapter_to_dvobj(adapter), i);
+		rtw_dfs_rd_en_decision_cmd(adapter);
 	}
 
 exit:
@@ -2444,15 +2423,13 @@ static ssize_t proc_set_udpport(struct file *file, const char __user *buffer, si
 {
 	struct net_device *dev = data;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
-	struct recv_priv *precvpriv;
+	struct recv_priv *precvpriv = &(padapter->recvpriv);
 	int sink_udpport = 0;
 	char tmp[32];
 
 
 	if (!padapter)
 		return -EFAULT;
-
-	precvpriv = &(padapter->recvpriv);
 
 	if (count < 1) {
 		RTW_INFO("argument size is less than 1\n");
@@ -2846,7 +2823,7 @@ static void rtw_set_tx_bw_mode(struct _ADAPTER *adapter, u8 bw_mode)
 		for (i = 0; i < MACID_NUM_SW_LIMIT; i++) {
 			sta = macid_ctl->sta[i];
 			if (sta && !is_broadcast_mac_addr(sta->cmn.mac_addr))
-				rtw_dm_ra_mask_wk_cmd(adapter, sta);
+				rtw_dm_ra_mask_wk_cmd(adapter, (u8 *)sta);
 		}
 	}
 }
@@ -2882,15 +2859,12 @@ exit:
 
 static int proc_get_hal_txpwr_info(struct seq_file *m, void *v)
 {
+#ifdef CONFIG_TXPWR_PG_WITH_PWR_IDX
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	HAL_DATA_TYPE *hal_data = GET_HAL_DATA(adapter);
-#ifdef CONFIG_TXPWR_PG_WITH_PWR_IDX
 	struct hal_spec_t *hal_spec = GET_HAL_SPEC(adapter);
-#endif
 
-	RTW_PRINT_SEL(m, "txpwr_pg_mode: %s\n", txpwr_pg_mode_str(hal_data->txpwr_pg_mode));
-#ifdef CONFIG_TXPWR_PG_WITH_PWR_IDX
 	if (hal_data->txpwr_pg_mode == TXPWR_PG_WITH_PWR_IDX) {
 		if (hal_is_band_support(adapter, BAND_ON_2_4G))
 			dump_hal_txpwr_info_2g(m, adapter, hal_spec->rfpath_num_2g, hal_data->max_tx_cnt);
@@ -2942,7 +2916,7 @@ static int proc_get_tpc_settings(struct seq_file *m, void *v)
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 
-	dump_txpwr_tpc_settings(m, adapter_to_dvobj(adapter));
+	dump_txpwr_tpc_settings(m, adapter);
 
 	return 0;
 }
@@ -2977,7 +2951,7 @@ static ssize_t proc_set_tpc_settings(struct file *file, const char __user *buffe
 		rfctl->tpc_mode = mode;
 
 		if (rtw_get_hw_init_completed(adapter))
-			rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_update_txpwr_level_all_hwband)), adapter_to_dvobj(adapter), 2000);
+			rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_hal_update_txpwr_level)), adapter, 2000);
 	}
 
 	return count;
@@ -3017,7 +2991,7 @@ static ssize_t proc_set_antenna_gain(struct file *file, const char __user *buffe
 		rfctl->antenna_gain = gain;
 
 		if (rtw_get_hw_init_completed(adapter))
-			rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_update_txpwr_level_all_hwband)), adapter_to_dvobj(adapter), 2000);
+			rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_hal_update_txpwr_level)), adapter, 2000);
 	}
 
 	return count;
@@ -3028,7 +3002,7 @@ static int proc_get_tx_power_ext_info(struct seq_file *m, void *v)
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 
-	dump_tx_power_ext_info(m, adapter_to_dvobj(adapter));
+	dump_tx_power_ext_info(m, adapter);
 
 	return 0;
 }
@@ -3066,7 +3040,7 @@ static ssize_t proc_set_tx_power_ext_info(struct file *file, const char __user *
 		else
 			rtw_run_in_thread_cmd(adapter, ((void *)(phy_reload_tx_power_ext_info)), adapter);
 
-		rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_update_txpwr_level_all_hwband)), adapter_to_dvobj(adapter), 2000);
+		rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_hal_update_txpwr_level)), adapter, 2000);
 
 clear_ps_deny:
 		rtw_ps_deny_cancel(adapter, PS_DENY_IOCTL);
@@ -3122,7 +3096,7 @@ static int proc_get_tx_power_idx(struct seq_file *m, void *v)
 		RTW_INFO("%s path=%u, rs=%u\n", __func__, path, rs);
 
 	if (path == RF_PATH_A && rs == CCK)
-		dump_tx_power_idx_title(m, adapter, bw, 0, 0);
+		dump_tx_power_idx_title(m, adapter, bw, cch, 0);
 	dump_tx_power_idx_by_path_rs(m, adapter, path, rs, bw, cch, 0);
 
 	return 0;
@@ -3201,7 +3175,7 @@ static int proc_get_txpwr_total_dbm(struct seq_file *m, void *v)
 	u8 cch = hal_data->current_channel;
 
 	if (rs == CCK)
-		dump_txpwr_total_dbm_title(m, adapter, bw, 0, 0);
+		dump_txpwr_total_dbm_title(m, adapter, bw, cch, 0);
 	dump_txpwr_total_dbm_by_rs(m, adapter, rs, bw, cch, 0);
 
 	return 0;
@@ -3785,10 +3759,7 @@ ssize_t proc_set_btc_reduce_wl_txpwr(struct file *file, const char __user *buffe
 
 	num = sscanf(tmp, "%d", &val);
 
-	if ((IS_HARDWARE_TYPE_8822C(padapter)
-		|| IS_HARDWARE_TYPE_8822E(padapter)
-		|| IS_HARDWARE_TYPE_8733B(padapter))
-		&& (hal_data->EEPROMBluetoothCoexist == _TRUE))
+	if ((IS_HARDWARE_TYPE_8822C(padapter)) && (hal_data->EEPROMBluetoothCoexist == _TRUE))
 		rtw_btc_reduce_wl_txpwr_cmd(padapter, val);
 
 	return count;
@@ -3879,6 +3850,17 @@ static int proc_get_best_chan(struct seq_file *m, void *v)
 
 	if (IS_ACS_ENABLE(adapter))
 		rtw_acs_info_dump(m, adapter);
+	else
+		_RTW_PRINT_SEL(m,"ACS disabled\n");
+	return 0;
+}
+
+static int proc_get_acs_current_channel(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	if (IS_ACS_ENABLE(adapter))
+		rtw_acs_current_info_dump(m, adapter);
 	else
 		_RTW_PRINT_SEL(m,"ACS disabled\n");
 	return 0;
@@ -4116,9 +4098,8 @@ static int proc_get_napi_info(struct seq_file *m, void *v)
 	struct registry_priv *pregistrypriv = &adapter->registrypriv;
 	u8 napi = 0, gro = 0;
 	u32 weight = 0;
-#ifdef CONFIG_RTW_NAPI_DYNAMIC
-	struct dvobj_priv *d = adapter_to_dvobj(adapter);
-#endif /* CONFIG_RTW_NAPI_DYNAMIC */
+	struct dvobj_priv *d;
+	d = adapter_to_dvobj(adapter);
 
 
 #ifdef CONFIG_RTW_NAPI
@@ -4150,6 +4131,7 @@ static int proc_get_napi_info(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "GRO %s\n", gro?"enable":"disable");
 
 	return 0;
+
 }
 
 #ifdef CONFIG_RTW_NAPI_DYNAMIC
@@ -5426,11 +5408,388 @@ static ssize_t proc_set_amsdu_mode(struct file *file, const char __user *buffer,
 
 }
 
+static ssize_t proc_set_thermal_state(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv *pregpriv = &padapter->registrypriv;
+	HAL_DATA_TYPE *pHalData = GET_HAL_DATA(padapter);
+	char tmp[32];
+	u32 offset_temp;
+
+	if (!padapter)
+		return -EFAULT;
+
+	if (count < 1) {
+		RTW_INFO("Set thermal_state Argument error. \n");
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%u", &offset_temp);
+		if (num < 1)
+			return count;
+	}
+
+	if (offset_temp > 70) {
+		RTW_INFO("Set thermal_state Argument range error. \n");
+		return -EFAULT;
+	}
+
+	RTW_INFO("Write to thermal_state offset tempC : %d\n", offset_temp);
+	pHalData->eeprom_thermal_offset_temperature = (u8)offset_temp;
+
+	return count;
+}
+
+static int proc_get_thermal_state(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+        struct dm_struct *p_dm_odm = adapter_to_phydm(padapter);
+        HAL_DATA_TYPE *pHalData = GET_HAL_DATA(padapter);
+
+        u8 rx_cnt = rf_type_to_rf_rx_cnt(pHalData->rf_type);
+        int thermal_value = 0;
+        int thermal_offset = 0;
+        u32 thermal_reg_mask = 0;
+	int temperature_offset = 40;	// measured value. see comment in 8812eu commit/5b7a66d for details
+        int temperature = 0; 
+
+        thermal_reg_mask = 0x007e; // in _dpk_thermal_read_8733b()
+	temperature_offset = (pHalData->eeprom_thermal_offset_temperature==0)? 
+				temperature_offset: pHalData->eeprom_thermal_offset_temperature;
+        
+        phy_set_rf_reg(padapter, 0, 0x42, BIT19, 0x1);
+        phy_set_rf_reg(padapter, 0, 0x42, BIT19, 0x0);
+        phy_set_rf_reg(padapter, 0, 0x42, BIT19, 0x1);
+
+        rtw_usleep_os(15);    // 15us in _dpk_thermal_read_8733b()
+        
+        thermal_value = phy_query_rf_reg(padapter, 0, 0x42, thermal_reg_mask);
+        thermal_offset = pHalData->eeprom_thermal_meter;
+	temperature = (((thermal_value-thermal_offset) *5)/2) + temperature_offset;
+
+        RTW_PRINT_SEL(m, "rf_path: 0, thermal_value: %d, offset: %d, temperature: %d\n", thermal_value, thermal_offset, temperature);
+	
+        return 0;
+}
+
+static ssize_t proc_set_narrowband(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv *pregpriv = &padapter->registrypriv;
+	HAL_DATA_TYPE *pHalData = GET_HAL_DATA(padapter);
+	char tmp[32];
+	u32 nbw;
+
+	if (!padapter)
+		return -EFAULT;
+
+	if (count < 1) {
+		RTW_INFO("Set narrowband argument error. \n");
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%u", &nbw);
+		if (num < 1)
+			return count;
+	}
+
+	if ( !((nbw == 5) || (nbw == 10) || (nbw == 20)) ) {
+		RTW_INFO("Set narrowband argument range error. \n");
+		return -EFAULT;
+	}
+
+	RTW_INFO("Set narrowband : %d\n", nbw);
+
+	switch (nbw) {
+	case 5:
+		phy_set_bb_reg(padapter, 0x9b0, 0xc0, 0x1);
+		phy_set_bb_reg(padapter, 0x9b4, 0x700, 0x1);
+		phy_set_bb_reg(padapter, 0x9f0, 0xf, 0xa);
+		phy_set_bb_reg(padapter, 0x81c, 0xf, 0x0);
+		break;
+	case 10:
+		phy_set_bb_reg(padapter, 0x9b0, 0xc0, 0x2);
+		phy_set_bb_reg(padapter, 0x9b4, 0x700, 0x2);
+		phy_set_bb_reg(padapter, 0x9f0, 0xf, 0xb);
+		phy_set_bb_reg(padapter, 0x81c, 0xf, 0x0);
+		break;
+	case 20:
+	default:
+		phy_set_bb_reg(padapter, 0x9b0, 0xc0, 0x0);
+		phy_set_bb_reg(padapter, 0x9b4, 0x700, 0x3);
+		phy_set_bb_reg(padapter, 0x9f0, 0xf, 0xc);
+		phy_set_bb_reg(padapter, 0x81c, 0xf, 0x9);
+		break;
+	}
+
+	return count;
+}
+
+
+static int proc_get_dis_cca(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv	*pregpriv = &padapter->registrypriv;
+	struct dm_struct *dm;
+	u32 bit_dis_cca;
+	
+	if (!padapter)
+		return -EFAULT;
+		
+	dm = adapter_to_phydm(padapter);
+
+	bit_dis_cca = odm_get_mac_reg(dm, R_0x520, BIT(15));
+	
+	RTW_PRINT_SEL(m, "BIT_DIS_EDCCA = %d, CCA %s\n", bit_dis_cca, bit_dis_cca? "disabled": "enabled");
+
+	return 0;
+}
+
+static ssize_t proc_set_dis_cca(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv	*pregpriv = &padapter->registrypriv;
+	struct dm_struct *dm;
+	char tmp[32];
+	u32 en;
+	
+	dm = adapter_to_phydm(padapter);
+
+	if (!padapter)
+		return -EFAULT;
+		
+	if (count < 1) {
+		RTW_INFO("Set dis_cca Argument error.\n");
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%u", &en);
+		if (num < 1)
+			return count;
+	}
+	
+	if (en != 0 && en != 1) {
+		RTW_INFO("Set dis_cca Argument range error.\n");
+		return -EFAULT;
+	}
+	
+	if (en == 1) {
+		// mac bit_dis_edcca 
+		odm_set_mac_reg(dm, R_0x520, BIT(15), 1);
+		// mac bit_edcca_msk_countdown
+		odm_set_mac_reg(dm, R_0x524, BIT(11), 0);
+		// bb cck cca
+		odm_set_bb_reg(dm, R_0x1a9c, BIT(20), 0x0);
+		odm_set_bb_reg(dm, R_0x1a14, 0x300, 0x3);
+		// bb ofdm cca 
+		odm_set_bb_reg(dm, R_0x1d58, 0xff8, 0x1ff);	
+	} else {
+		// mac bit_dis_edcca 
+		odm_set_mac_reg(dm, R_0x520, BIT(15), 0);
+		// mac bit_edcca_msk_countdown
+		odm_set_mac_reg(dm, R_0x524, BIT(11), 1);
+		// bb cck cca
+		odm_set_bb_reg(dm, R_0x1a9c, BIT(20), 0x1);
+		odm_set_bb_reg(dm, R_0x1a14, 0x300, 0x0);
+		// bb ofdm cca
+		odm_set_bb_reg(dm, R_0x1d58, 0xff8, 0x0);
+	}
+	
+
+	RTW_INFO("Write to dis_cca: %d, %s cca\n", en, (en==1)? "disabled": "enabled");
+
+	return count;
+}
+
+static int proc_get_single_tone(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv	*pregpriv = &padapter->registrypriv;
+	struct dm_struct *dm;
+	u32 bit_dis_cca;
+	
+	if (!padapter)
+		return -EFAULT;
+		
+	dm = adapter_to_phydm(padapter);
+
+	
+	RTW_PRINT_SEL(m, "single_tone: <en:0(dis)/1(en)> <rf_path:0(A)/1(B)/4(AB)>\n");
+
+	return 0;
+}
+
+static ssize_t proc_set_single_tone(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct registry_priv	*pregpriv = &padapter->registrypriv;
+	struct dm_struct *dm;
+	char tmp[32];
+	u32 en, rf_path;
+
+	dm = adapter_to_phydm(padapter);
+
+	if (!padapter)
+		return -EFAULT;
+		
+	if (count < 2) {
+		RTW_INFO("Set single_tone Argument error.\n");
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%u %u", &en, &rf_path);
+		if (num < 1)
+			return count;
+	}
+	
+	if (rf_path != RF_PATH_A && rf_path != RF_PATH_B && rf_path != RF_PATH_AB) {
+		RTW_INFO("Set single_tone rf_path Argument range error.\n");
+		return -EFAULT;
+	}
+	
+	if (en != 0 && en != 1) {
+		RTW_INFO("Set single_tone en Argument range error.\n");
+		return -EFAULT;
+	}
+	
+	if (en == 1) {
+		phydm_mp_set_single_tone(dm, true, rf_path);
+	} else {
+		phydm_mp_set_single_tone(dm, false, rf_path);
+	}
+	
+	RTW_INFO("Write to single_tone: en %d, path %d\n", en, rf_path);
+
+	return count;
+}
+
+int proc_get_write_rfreg(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+
+        RTW_PRINT_SEL(m, "RF reg read & write usage:\n");
+        RTW_PRINT_SEL(m, "\n");
+        RTW_PRINT_SEL(m, "Write RF reg: \n");
+        RTW_PRINT_SEL(m, "\techo \"<8'h_addr> <20'h_val>\" > write_rfreg \n");
+        RTW_PRINT_SEL(m, "Read RF reg: \n");
+        RTW_PRINT_SEL(m, "\techo \"<8'h_addr>\" > read_rfreg && cat read_rfreg\n");
+	return 0;
+}
+
+
+ssize_t proc_set_write_rfreg(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	char tmp[32];
+	u32 addr, val;
+
+	if (count < 2) {
+		RTW_INFO("%s: argument size is less than 2\n", __FUNCTION__);
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%x %x", &addr, &val);
+		if (num != 2) {
+			RTW_INFO("%s: invalid parameter!\n", __FUNCTION__);
+			return count;
+		}
+                phy_set_rf_reg(padapter, RF_PATH_A, addr&0xff, val&0xfffff, 0xfffff);
+	}
+	return count;
+}
+
+static u8 proc_get_read_rf_addr = 0x0;
+
+int proc_get_read_rfreg(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+
+	RTW_PRINT_SEL(m, "phy_query_rf_reg(RF_PATH_A, 0x%x)=0x%x\n", 
+	  proc_get_read_rf_addr, 
+	  phy_query_rf_reg(padapter, RF_PATH_A, proc_get_read_rf_addr, 0xfffff)
+	);
+	return 0;
+}
+
+ssize_t proc_set_read_rfreg(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	char tmp[16];
+	u8 addr;
+
+	if (count < 1) {
+		RTW_INFO("%s: argument size is less than 1\n", __FUNCTION__);
+		return -EFAULT;
+	}
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+
+		int num = sscanf(tmp, "%hhx", &addr);
+
+		if (num != 1) {
+			RTW_INFO("%s: invalid parameter\n", __FUNCTION__);
+			return count;
+		}
+		proc_get_read_rf_addr = addr;
+	}
+	return count;
+}
+
 /*
 * rtw_adapter_proc:
 * init/deinit when register/unregister net_device
 */
 const struct rtw_proc_hdl adapter_proc_hdls[] = {
+        RTW_PROC_HDL_SSEQ("thermal_state", proc_get_thermal_state, proc_set_thermal_state),
+        RTW_PROC_HDL_SSEQ("dis_cca", proc_get_dis_cca, proc_set_dis_cca),
+        RTW_PROC_HDL_SSEQ("single_tone", proc_get_single_tone, proc_set_single_tone),
+        RTW_PROC_HDL_SSEQ("narrowband", NULL, proc_set_narrowband),
+        RTW_PROC_HDL_SSEQ("write_rfreg", proc_get_write_rfreg, proc_set_write_rfreg),
+        RTW_PROC_HDL_SSEQ("read_rfreg", proc_get_read_rfreg, proc_set_read_rfreg),
 #if RTW_SEQ_FILE_TEST
 	RTW_PROC_HDL_SEQ("seq_file_test", &seq_file_test, NULL),
 #endif
@@ -5485,9 +5844,8 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 #ifdef CONFIG_RTW_MBO
 	RTW_PROC_HDL_SSEQ("non_pref_ch", rtw_mbo_proc_non_pref_chans_get, rtw_mbo_proc_non_pref_chans_set),
 	RTW_PROC_HDL_SSEQ("cell_data", rtw_mbo_proc_cell_data_get, rtw_mbo_proc_cell_data_set),
-	RTW_PROC_HDL_SSEQ("mbo_attr", rtw_mbo_proc_attr_get, rtw_mbo_proc_attr_set),
 #endif
-#if defined(CONFIG_IOCTL_CFG80211) && defined(CONFIG_RTW_80211R)
+#ifdef CONFIG_RTW_80211R
 	RTW_PROC_HDL_SSEQ("ft_flags", rtw_ft_proc_flags_get, rtw_ft_proc_flags_set),
 #endif
 	RTW_PROC_HDL_SSEQ("defs_param", proc_get_defs_param, proc_set_defs_param),
@@ -5660,11 +6018,9 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("p2p_wowlan_info", proc_get_p2p_wowlan_info, NULL),
 #endif
 	RTW_PROC_HDL_SSEQ("country_code", proc_get_country_code, proc_set_country_code),
-#if CONFIG_IEEE80211_BAND_6GHZ
-	RTW_PROC_HDL_SSEQ("env", proc_get_env, proc_set_env),
-#endif
 	RTW_PROC_HDL_SSEQ("chan_plan", proc_get_chan_plan, proc_set_chan_plan),
-	RTW_PROC_HDL_SSEQ("chplan_confs", proc_get_chplan_confs, proc_set_chplan_confs),
+	RTW_PROC_HDL_SSEQ("monitor_chan_override", proc_get_monitor_chan_override, proc_set_monitor_chan_override),
+	RTW_PROC_HDL_SSEQ("edcca_threshold_jaguar3_override", proc_get_edcca_threshold_jaguar3_override, proc_set_edcca_threshold_jaguar3_override),
 	RTW_PROC_HDL_SSEQ("cap_spt_op_class_ch", proc_get_cap_spt_op_class_ch, proc_set_cap_spt_op_class_ch),
 	RTW_PROC_HDL_SSEQ("reg_spt_op_class_ch", proc_get_reg_spt_op_class_ch, proc_set_reg_spt_op_class_ch),
 	RTW_PROC_HDL_SSEQ("cur_spt_op_class_ch", proc_get_cur_spt_op_class_ch, proc_set_cur_spt_op_class_ch),
@@ -5675,9 +6031,6 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("pre_link_sta", proc_get_pre_link_sta, proc_set_pre_link_sta),
 #endif
 	RTW_PROC_HDL_SSEQ("ch_sel_policy", proc_get_ch_sel_policy, proc_set_ch_sel_policy),
-#ifdef CONFIG_80211D
-	RTW_PROC_HDL_SSEQ("country_ie_slave_records", proc_get_country_ie_slave_records, NULL),
-#endif
 #ifdef CONFIG_DFS_MASTER
 	RTW_PROC_HDL_SSEQ("dfs_test_case", proc_get_dfs_test_case, proc_set_dfs_test_case),
 	RTW_PROC_HDL_SSEQ("update_non_ocp", NULL, proc_set_update_non_ocp),
@@ -5738,6 +6091,7 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 
 #ifdef CONFIG_RTW_ACS
 	RTW_PROC_HDL_SSEQ("acs", proc_get_best_chan, proc_set_acs),
+	RTW_PROC_HDL_SSEQ("acs_current", proc_get_acs_current_channel, NULL),
 	RTW_PROC_HDL_SSEQ("chan_info", proc_get_chan_info, NULL),
 #endif
 
@@ -5770,7 +6124,6 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("rx_stat", proc_get_rx_stat, NULL),
 
 	RTW_PROC_HDL_SSEQ("tx_stat", proc_get_tx_stat, NULL),
-	RTW_PROC_HDL_SSEQ("sta_tx_stat", proc_get_sta_tx_stat, proc_set_sta_tx_stat),
 	/**** PHY Capability ****/
 	RTW_PROC_HDL_SSEQ("phy_cap", proc_get_phy_cap, NULL),
 #ifdef CONFIG_80211N_HT
@@ -5896,16 +6249,9 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("wpas_info", proc_get_wpas_info, proc_set_wpas_info),
 	RTW_PROC_HDL_SSEQ("rtw_amsdu_mode", proc_get_amsdu_mode, proc_set_amsdu_mode),
 
-#ifdef CONFIG_ECSA
 #if defined(CONFIG_CONCURRENT_MODE) && defined(CONFIG_AP_MODE)
 	RTW_PROC_HDL_SSEQ("ap_csa_cnt", proc_get_ap_csa_cnt, proc_set_ap_csa_cnt),
 #endif
-#ifdef PRIVATE_R
-	RTW_PROC_HDL_SSEQ("p2p_park_ch", proc_get_p2p_park_ch, proc_set_p2p_park_ch),
-#endif
-#endif
-
-	RTW_PROC_HDL_SSEQ("disconnect_info", proc_get_disconnect_info , proc_set_disconnect_info),
 };
 
 const int adapter_proc_hdls_num = sizeof(adapter_proc_hdls) / sizeof(struct rtw_proc_hdl);
