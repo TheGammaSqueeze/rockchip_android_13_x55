@@ -129,7 +129,7 @@ typedef struct RTK_sco_card {
 #define GET_DRV_DATA(x)                      x->driver_data
 #endif
 
-#define BTUSB_RPM                            (0 * USB_RPM) /* 1 SS enable; 0 SS disable */
+#define BTUSB_RPM                            (1 * USB_RPM) /* 1 SS enable; 0 SS disable */
 #define BTUSB_WAKEUP_HOST                    0             /* 1  enable; 0  disable */
 #define BTUSB_MAX_ISOC_FRAMES                48
 #define BTUSB_INTR_RUNNING                   0
