@@ -314,23 +314,6 @@ static void rockchip_dp_bridge_detach(struct analogix_dp_plat_data *plat_data,
 		rockchip_drm_unregister_sub_dev(sdev);
 }
 
-static enum drm_mode_status
-rockchip_dp_drm_encoder_mode_valid(struct drm_encoder *encoder,
-				   const struct drm_display_mode *mode)
-{
-	struct rockchip_dp_device *dp = to_dp(encoder);
-	struct videomode vm;
-
-	drm_display_mode_to_videomode(mode, &vm);
-
-	if (!vm.hfront_porch || !vm.hback_porch || !vm.vfront_porch || !vm.vback_porch) {
-		DRM_DEV_ERROR(dp->dev, "front porch or back porch can not be 0\n");
-		return MODE_BAD;
-	}
-
-	return MODE_OK;
-}
-
 static bool
 rockchip_dp_drm_encoder_mode_fixup(struct drm_encoder *encoder,
 				   const struct drm_display_mode *mode,
@@ -501,7 +484,6 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 }
 
 static struct drm_encoder_helper_funcs rockchip_dp_encoder_helper_funcs = {
-	.mode_valid = rockchip_dp_drm_encoder_mode_valid,
 	.mode_fixup = rockchip_dp_drm_encoder_mode_fixup,
 	.mode_set = rockchip_dp_drm_encoder_mode_set,
 	.atomic_enable = rockchip_dp_drm_encoder_enable,
@@ -689,9 +671,7 @@ static int rockchip_dp_probe(struct platform_device *pdev)
 	if (IS_ERR(dp->adp))
 		return PTR_ERR(dp->adp);
 
-	if (dp->data->split_mode &&
-	    (device_property_read_bool(dev, "split-mode") ||
-	     device_property_read_bool(dev, "dual-channel"))) {
+	if (dp->data->split_mode && device_property_read_bool(dev, "split-mode")) {
 		struct rockchip_dp_device *secondary =
 				rockchip_dp_find_by_id(dev->driver, !dp->id);
 		if (!secondary) {
@@ -701,8 +681,6 @@ static int rockchip_dp_probe(struct platform_device *pdev)
 
 		dp->plat_data.right = secondary->adp;
 		dp->plat_data.split_mode = true;
-		dp->plat_data.dual_channel_mode = device_property_read_bool(dev, "dual-channel");
-		secondary->plat_data.panel = dp->plat_data.panel;
 		secondary->plat_data.left = dp->adp;
 		secondary->plat_data.split_mode = true;
 	}
